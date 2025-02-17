@@ -1,10 +1,11 @@
 use tokio::io::{BufReader, AsyncBufReadExt};
 use tokio::process::Command;
-use std::time::Duration;
 use std::process::Stdio;
 use thirtyfour::prelude::*;
 
-pub async fn headless_browser(query: String) -> Result<(), String> {
+use crate::downloader::Song;
+
+pub async fn search_youtube(query: String) -> Result<Vec<Song>, String> {
     let mut chromedriver = match Command::new("chromedriver").stdout(Stdio::piped()).spawn() {
         Ok(child) => child,
         Err(e) => return Err(format!("Failed to spawn chromedriver: {e:?}"))
@@ -32,12 +33,27 @@ pub async fn headless_browser(query: String) -> Result<(), String> {
     let driver = WebDriver::new(format!("http://localhost:{ip}"), caps).await.unwrap();
 
     driver.goto(format!("https://youtube.com/results?search_query={}", query)).await.unwrap();
-    let _ = tokio::time::sleep(Duration::from_secs(5)).await;
-    let elem_form = driver.find_all(By::Id("video-title")).await.unwrap();
-    for elem in elem_form { println!("{}", elem.text().await.unwrap()); }
+    let video_titles = driver.find_all(By::Id("video-title")).await.unwrap();
+    let video_channels = driver.find_all(By::Id("channel-name")).await.unwrap();
+
+    let mut options: Vec<Song> = Vec::new();
+
+    for idx in 0..video_titles.len() {
+        let title = video_titles[idx].text().await.unwrap();
+        let url_idx = video_titles[idx].outer_html().await.unwrap().find("href").unwrap();
+        let url_slice = &video_titles[idx].outer_html().await.unwrap().to_string()[url_idx..];
+        let url_end = url_slice.find(">").unwrap() - 1 + url_idx;
+        let url_slice = String::from("https://youtube.com/") + &video_titles[idx].outer_html().await.unwrap().to_string()[url_idx + 7..url_end];
+        let channel = video_channels[idx * 2 + 1].text().await.unwrap();
+
+        options.push(Song {
+            name: title,
+            channel,
+            url: url_slice,
+            file: None
+        });
+    }
 
     driver.quit().await.unwrap();
-
-    
-    Ok(())
+    Ok(options)
 }

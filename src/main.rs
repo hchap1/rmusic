@@ -1,10 +1,14 @@
 mod chromedriver;
+mod application;
+mod filemanager;
+mod downloader;
 
-use chromedriver::headless_browser;
+use crate::application::Application;
 
 #[tokio::main]
 async fn main() {
-
-    let _ = headless_browser(String::from("viva la vida")).await;
-
+    let mut terminal = ratatui::init();
+    let mut application: Application = Application::new();
+    application.run(&mut terminal).await;
+    ratatui::restore();
 }
