@@ -1,17 +1,32 @@
 use std::collections::HashSet;
 use std::fs::read_to_string;
+use std::fs::create_dir_all;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::fs::read_dir;
 use std::io::Write;
+use std::fs::File;
+
+use directories::ProjectDirs;
 
 use crate::downloader::Song;
 
-fn find_smallest_unused_id(dir: PathBuf) -> Result<Vec<usize>, ()> {
-    let contents = match read_dir(dir) {
+
+pub fn get_directory() -> PathBuf {
+    let p = ProjectDirs::from("com", "timeparadox", "rmusic").unwrap();
+    let path = p.data_dir().to_path_buf();
+    let _ = create_dir_all(&path);
+    path
+}
+
+pub fn find_smallest_unused_id() -> Result<usize, ()> {
+    let mut smallest_id: usize = 0;
+    let contents = match read_dir(get_directory()) {
         Ok(contents) => contents,
         Err(_) => return Err(())
     };
+
+    let mut used_ids: HashSet<usize> = HashSet::new();
 
     for entry in contents {
         let item = match entry {
@@ -20,10 +35,20 @@ fn find_smallest_unused_id(dir: PathBuf) -> Result<Vec<usize>, ()> {
         };
 
         let filename = item.file_name().to_string_lossy().to_string();
-        println!("File: {filename}");
+        if let Some(extension) = item.path().extension() {
+            if extension == ".mp3" {
+                let id = match filename.strip_suffix(".mp3").unwrap().parse::<usize>() {
+                    Ok(id) => id,
+                    Err(_) => continue
+                };
+
+                used_ids.insert(id);
+            }
+        }
     }
 
-    Ok(Vec::new())
+    while used_ids.contains(&smallest_id) { smallest_id += 1; }
+    Ok(smallest_id)
 }
 
 pub struct Playlist {
@@ -33,26 +58,20 @@ pub struct Playlist {
 }
 
 impl Playlist {
-    pub fn load_playlist(file: PathBuf) -> Result<Self, ()> {
-        // Playlist file structured as song||artist||url||file abs path OR _ if not downloaded
-        
+    pub fn load_playlist() -> Result<Self, ()> {
+        let filepath: String = get_directory().to_string_lossy().to_string() + "/playlist.txt";
+        let file: PathBuf = PathBuf::from(filepath);
         let contents = match read_to_string(&file) {
             Ok(contents) => contents.lines().map(|x| x.to_string()).collect::<Vec<String>>(),
-            Err(_) => return Err(())
+            Err(_) => {
+                let _ = File::create("playlist.txt");
+                vec![]
+            }
         };
 
         let mut playlist = Self {
             songs: contents.into_iter().map(|line| {
-                let components = line.split("||").map(|component| component.to_string()).collect::<Vec<String>>();
-                Song {
-                    name: components[0].clone(),
-                    channel: components[1].clone(),
-                    url: components[2].clone(),
-                    file: match components.get(3) {
-                        Some(file) => if *file == String::from("_") { None } else { Some(PathBuf::from(file)) },
-                        None => None
-                    }
-                }
+                Song::deserialise(line)
             }).collect::<Vec<Song>>(),
             collected: HashSet::new(),
             file
@@ -68,10 +87,7 @@ impl Playlist {
             .create(true)
             .open(&self.file).unwrap();
 
-        let _ = writeln!(file, "{}", format!("{}||{}||{}||{}", song.name, song.channel, song.url, match song.file {
-            Some(ref f) => f.to_string_lossy().to_string(),
-            None => String::from("_")
-        }));
+        let _ = writeln!(file, "{}", song.serialise());
 
         self.collected.insert(song.url.clone());
         self.songs.push(song);
@@ -79,5 +95,22 @@ impl Playlist {
 
     pub fn contains(&self, song: &Song) -> bool {
         return self.collected.contains(&song.url);
+    }
+
+    pub fn remove_song(&mut self, idx: usize) {
+        self.songs.remove(idx);
+        
+        let mut contents = match read_to_string(&self.file) {
+            Ok(contents) => contents.lines().map(|x| x.to_string()).collect::<Vec<String>>(),
+            Err(_) => return
+        };
+
+        contents.remove(idx);
+
+        let mut file = File::create(&self.file).unwrap();
+
+        for line in contents {
+            let _ = writeln!(file, "{line}");
+        }
     }
 }

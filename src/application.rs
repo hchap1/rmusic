@@ -13,12 +13,11 @@ use ratatui::{
     style::Style
 };
 
-use std::path::PathBuf;
-
 use crate::chromedriver::search_youtube;
 use crate::filemanager::Playlist;
 use crate::downloader::Song;
 
+#[derive(PartialEq, Eq)]
 pub enum ApplicationState {
     Homepage,
     Search,
@@ -50,7 +49,7 @@ impl Application {
             mode: Mode::Normal,
             list_state: ListState::default(),
             user_input: Vec::new(),
-            playlist: Playlist::load_playlist(PathBuf::from("playlist.txt")).unwrap(),
+            playlist: Playlist::load_playlist().unwrap(),
             search_results: Vec::new(),
             running: true
         }
@@ -86,6 +85,8 @@ impl Application {
                             match c {
                                 'i' => self.mode = Mode::Input,
                                 'q' => self.running = false,
+                                'j' => self.list_state.select_next(),
+                                'k' => self.list_state.select_previous(),
                                  _  => {}
                             }
                         }
@@ -114,12 +115,28 @@ impl Application {
             KeyCode::Backspace => {
                 match self.state {
                     ApplicationState::Homepage => {},
-                    _ => {
+                    ApplicationState::Search => {
                         if self.mode == Mode::Input {
                             self.user_input.pop();
                         } else {
                             self.state = ApplicationState::Homepage;
                         }
+                    }
+                    ApplicationState::Playlist => {
+                        if self.mode == Mode::Input {
+                            self.user_input.pop();
+                        } else {
+                            self.state = ApplicationState::Homepage;
+                        }
+                    }
+                }
+            }
+
+            KeyCode::Delete => {
+                if self.state == ApplicationState::Playlist {
+                    match self.list_state.selected() {
+                        Some(idx) => if idx < self.playlist.songs.len() { self.playlist.remove_song(idx) },
+                        None => {}
                     }
                 }
             }
@@ -132,16 +149,32 @@ impl Application {
                             None => 0
                         } == 0 {
                             self.state = ApplicationState::Search;
-                        } else { self.state = ApplicationState::Playlist; }
+                            self.list_state.select(Some(0));
+                        } else {
+                            self.state = ApplicationState::Playlist;
+                            self.list_state.select(Some(0));
+                        }
                     }
 
                     ApplicationState::Playlist => {
-                
+                        if self.mode == Mode::Normal {
+                            let idx = match self.list_state.selected() {
+                                Some(idx) => idx,
+                                None => return
+                            };
+
+                            if idx < self.playlist.songs.len() {
+                                self.playlist.songs[idx].download();
+                            }
+                        }
                     }
 
                     ApplicationState::Search => {
                         if self.mode == Mode::Input {
+                            let _ = self.mode == Mode::Normal;
                             self.fill_search_criteria().await;
+                        } else {
+                            self.select_search_option();
                         }
                     }
                 }
@@ -170,7 +203,13 @@ impl Application {
                         false => line.white()
                     }
                 }).collect::<Vec<Line>>(),
-                _ => vec![]
+                ApplicationState::Playlist => self.playlist.songs.iter().map(|song| {
+                    let line = Line::from(song.name.clone());
+                    match song.file {
+                        Some(_) => line.white(),
+                        None => line.gray()
+                    }
+                }).collect::<Vec<Line>>()
             }
         ).block(block).highlight_style(Style::new()).highlight_symbol("->");
         frame.render_stateful_widget(lines, frame.area(), &mut self.list_state);
@@ -178,5 +217,18 @@ impl Application {
 
     async fn fill_search_criteria(&mut self) {
         self.search_results = search_youtube(self.user_input.iter().collect::<String>()).await.unwrap();
+    }
+
+    fn select_search_option(&mut self) {
+        if self.state != ApplicationState::Search {
+            return;
+        }
+
+        let idx = match self.list_state.selected() {
+            Some(idx) => if idx < self.search_results.len() { idx } else { return; },
+            None => return
+        };
+
+        if !self.playlist.contains(&self.search_results[idx]) { self.playlist.add_song(self.search_results[idx].clone()); }
     }
 }

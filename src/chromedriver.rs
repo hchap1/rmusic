@@ -42,7 +42,10 @@ pub async fn search_youtube(query: String) -> Result<Vec<Song>, String> {
         let title = video_titles[idx].text().await.unwrap();
         let url_idx = video_titles[idx].outer_html().await.unwrap().find("href").unwrap();
         let url_slice = &video_titles[idx].outer_html().await.unwrap().to_string()[url_idx..];
-        let url_end = url_slice.find(">").unwrap() - 1 + url_idx;
+        let url_end = match url_slice.find("&") {
+            Some(idx) => idx,
+            None => continue
+        } + url_idx;
         let url_slice = String::from("https://youtube.com/") + &video_titles[idx].outer_html().await.unwrap().to_string()[url_idx + 7..url_end];
         let channel = video_channels[idx * 2 + 1].text().await.unwrap();
 
