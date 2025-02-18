@@ -13,6 +13,7 @@ use ratatui::{
     style::Style
 };
 
+use crate::audio::AudioPlayer;
 use crate::chromedriver::search_youtube;
 use crate::filemanager::Playlist;
 use crate::downloader::Song;
@@ -39,7 +40,8 @@ pub struct Application {
     playlist: Playlist,
     search_results: Vec<Song>,
 
-    running: bool
+    running: bool,
+    audio_player: AudioPlayer
 }
 
 impl Application {
@@ -51,7 +53,8 @@ impl Application {
             user_input: Vec::new(),
             playlist: Playlist::load_playlist().unwrap(),
             search_results: Vec::new(),
-            running: true
+            running: true,
+            audio_player: AudioPlayer::new()
         }
     }
 
@@ -164,7 +167,10 @@ impl Application {
                             };
 
                             if idx < self.playlist.songs.len() {
-                                self.playlist.songs[idx].download();
+                                if self.playlist.songs[idx].file == None { self.playlist.songs[idx].download(); }
+                                else {
+                                    self.audio_player.play(self.playlist.songs[idx].clone());
+                                }
                             }
                         }
                     }

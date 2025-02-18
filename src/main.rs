@@ -2,6 +2,7 @@ mod chromedriver;
 mod application;
 mod filemanager;
 mod downloader;
+mod audio;
 
 use crate::application::Application;
 
