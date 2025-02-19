@@ -19,7 +19,7 @@ pub fn get_directory() -> PathBuf {
     path
 }
 
-pub fn find_smallest_unused_id() -> Result<usize, ()> {
+pub fn find_smallest_unused_id(playlist: &Vec<Song>) -> Result<usize, ()> {
     let mut smallest_id: usize = 0;
     let contents = match read_dir(get_directory()) {
         Ok(contents) => contents,
@@ -36,12 +36,21 @@ pub fn find_smallest_unused_id() -> Result<usize, ()> {
 
         let filename = item.file_name().to_string_lossy().to_string();
         if let Some(extension) = item.path().extension() {
-            if extension == ".mp3" {
+            let extension = extension.to_string_lossy().to_string();
+            if extension == "mp3" {
                 let id = match filename.strip_suffix(".mp3").unwrap().parse::<usize>() {
                     Ok(id) => id,
                     Err(_) => continue
                 };
 
+                used_ids.insert(id);
+            }
+        }
+
+        for song in playlist {
+            if let Some(f) = &song.file {
+                let name = f.file_name().unwrap().to_string_lossy().to_string();
+                let id = name.strip_suffix(".mp3").unwrap().parse::<usize>().unwrap();
                 used_ids.insert(id);
             }
         }

@@ -10,12 +10,17 @@ use ratatui::{
     },
     DefaultTerminal,
     Frame,
-    style::Style
+    style::Style,
+    layout::{
+        Layout,
+        Constraint
+    }
 };
 
-use crate::audio::AudioPlayer;
+use crate::filemanager::find_smallest_unused_id;
 use crate::chromedriver::search_youtube;
 use crate::filemanager::Playlist;
+use crate::audio::AudioPlayer;
 use crate::downloader::Song;
 
 #[derive(PartialEq, Eq)]
@@ -90,6 +95,7 @@ impl Application {
                                 'q' => self.running = false,
                                 'j' => self.list_state.select_next(),
                                 'k' => self.list_state.select_previous(),
+                                ' ' => self.audio_player.toggle(),
                                  _  => {}
                             }
                         }
@@ -100,6 +106,7 @@ impl Application {
                             'j' => self.list_state.select_next(),
                             'k' => self.list_state.select_previous(),
                             'q' => self.running = false,
+                            ' ' => self.audio_player.toggle(),
                             _ => {}
                         }
                     }
@@ -109,6 +116,14 @@ impl Application {
                             'j' => self.list_state.select_next(),
                             'k' => self.list_state.select_previous(),
                             'q' => self.running = false,
+                            ' ' => self.audio_player.toggle(),
+                            'a' => {
+                                let idx = match self.list_state.selected() {
+                                    Some(idx) => if idx < self.playlist.songs.len() { idx } else { return; },
+                                    None => return
+                                };
+                                self.audio_player.append(self.playlist.songs[idx].clone());
+                            }
                             _ => {}
                         }
                     }
@@ -167,7 +182,10 @@ impl Application {
                             };
 
                             if idx < self.playlist.songs.len() {
-                                if self.playlist.songs[idx].file == None { self.playlist.songs[idx].download(); }
+                                if self.playlist.songs[idx].file == None {
+                                    let idx = find_smallest_unused_id(&self.playlist.songs).unwrap();
+                                    self.playlist.songs[idx].download(idx);
+                                }
                                 else {
                                     self.audio_player.play(self.playlist.songs[idx].clone());
                                 }
@@ -188,16 +206,23 @@ impl Application {
 
             KeyCode::Esc => { self.mode = Mode::Normal; self.user_input.clear(); },
 
+            KeyCode::Right => self.audio_player.skip(),
+
             _ => {}
         }
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        let block: Block = Block::bordered().border_set(border::THICK).title_top(match self.state {
-            ApplicationState::Search => "BROWSE SONGS",
-            ApplicationState::Homepage => "HOMEPAGE",
-            ApplicationState::Playlist => "SONGS"
-        }).title_bottom(self.user_input.iter().collect::<String>());
+        let layout = Layout::default().direction(ratatui::layout::Direction::Horizontal)
+            .constraints(vec![
+                    Constraint::Percentage(70),
+                    Constraint::Percentage(30)
+            ]).split(frame.area());
+        let block: Block = Block::bordered().border_set(border::ROUNDED).title_top(Line::from(match self.state {
+            ApplicationState::Search => "[ BROWSE SONGS ]",
+            ApplicationState::Homepage => "[ HOMEPAGE ]",
+            ApplicationState::Playlist => "[ SONGS ]"
+        }).centered().light_blue()).title_bottom(Line::from(format!("[ {} ]", self.user_input.iter().collect::<String>())).centered().white());
 
         let lines: List = List::new(
             match self.state {
@@ -218,7 +243,17 @@ impl Application {
                 }).collect::<Vec<Line>>()
             }
         ).block(block).highlight_style(Style::new()).highlight_symbol("->");
-        frame.render_stateful_widget(lines, frame.area(), &mut self.list_state);
+
+        let queue: List = List::new(
+            self.audio_player.get_queue().iter().enumerate().map(|x| Line::from(
+                if x.0 == 0 { x.1.clone().green() } else { x.1.clone().white() }
+            )).collect::<Vec<Line>>()
+        ).block(
+                Block::bordered().border_set(border::ROUNDED).title("QUEUE".light_blue().into_centered_line())
+            );
+
+        frame.render_stateful_widget(lines, layout[0], &mut self.list_state);
+        frame.render_widget(queue, layout[1]);
     }
 
     async fn fill_search_criteria(&mut self) {

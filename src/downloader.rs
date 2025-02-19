@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::io::Write;
 use std::fs::File;
 
-use crate::filemanager::find_smallest_unused_id;
 use crate::filemanager::get_directory;
 
 const SEPARATOR: char = '˾';
@@ -38,38 +37,28 @@ impl Song {
         }
     }
 
-    pub fn download(&mut self) {
-        let file_id: usize = match find_smallest_unused_id() {
-            Ok(id) => id,
+    pub fn download(&mut self, file_id: usize) {
+        let old: String = self.serialise();
+
+        self.file = Some(get_directory().join(PathBuf::from(format!("{file_id}.mp3"))));
+
+        let mut contents = match read_to_string(get_directory().join(PathBuf::from("playlist.txt"))) {
+            Ok(contents) => contents.lines().map(|x| x.to_string()).collect::<Vec<String>>(),
             Err(_) => return
         };
-
-        let old: String = self.serialise();
+        let new: String = self.serialise();
+        let idx = contents.iter().position(|n| *n == old).unwrap();
+        contents[idx] = new;
+        let mut file = File::create(get_directory().join(PathBuf::from("playlist.txt"))).unwrap();
+        for line in contents {
+            let _ = writeln!(file, "{line}");
+        }
 
         // yt-dlp -f "bestaudio" --extract-audio --audio-format mp3 -o <id>.mp3 <url>
 
         let _ = Command::new("yt-dlp").arg("-f").arg("bestaudio").arg("--extract-audio").arg("--audio-format").arg("mp3").arg("-o").arg(format!(
             "{}/{}.mp3", get_directory().to_string_lossy().to_string(), file_id
-        )).arg(&self.url).spawn();
-
-        self.file = Some(get_directory().join(PathBuf::from(format!("{file_id}.mp3"))));
-
-        let mut contents = match read_to_string(get_directory().join(PathBuf::from("playlist.txt"))) {
-
-            Ok(contents) => contents.lines().map(|x| x.to_string()).collect::<Vec<String>>(),
-            Err(_) => return
-        };
-
-        let new: String = self.serialise();
-
-        let idx = contents.iter().position(|n| *n == old).unwrap();
-        contents[idx] = new;
-
-        let mut file = File::create(get_directory().join(PathBuf::from("playlist.txt"))).unwrap();
-
-        for line in contents {
-            let _ = writeln!(file, "{line}");
-        }
+        )).arg(&self.url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
 
     }
 }
