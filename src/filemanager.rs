@@ -86,7 +86,10 @@ impl Playlist {
             file
         };
 
-        let _ = playlist.songs.iter().map(|song| playlist.collected.insert(song.url.clone()));
+        for song in &playlist.songs {
+            playlist.collected.insert(song.url.clone());
+        }
+
         Ok(playlist)
     }
 

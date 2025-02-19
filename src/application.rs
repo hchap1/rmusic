@@ -16,6 +16,8 @@ use ratatui::{
         Constraint
     }
 };
+use rand::seq::SliceRandom;
+use rand::rng;
 
 use crate::filemanager::find_smallest_unused_id;
 use crate::chromedriver::search_youtube;
@@ -162,15 +164,19 @@ impl Application {
             KeyCode::Enter => {
                 match self.state {
                     ApplicationState::Homepage => {
-                        if match self.list_state.selected() {
+                        let idx = match self.list_state.selected() {
                             Some(n) => n,
                             None => 0
-                        } == 0 {
+                        };
+
+                        if idx == 0 {
                             self.state = ApplicationState::Search;
                             self.list_state.select(Some(0));
-                        } else {
+                        } else if idx == 1 {
                             self.state = ApplicationState::Playlist;
                             self.list_state.select(Some(0));
+                        } else {
+                            self.shuffle();
                         }
                     }
 
@@ -183,8 +189,8 @@ impl Application {
 
                             if idx < self.playlist.songs.len() {
                                 if self.playlist.songs[idx].file == None {
-                                    let idx = find_smallest_unused_id(&self.playlist.songs).unwrap();
-                                    self.playlist.songs[idx].download(idx);
+                                    let i = find_smallest_unused_id(&self.playlist.songs).unwrap();
+                                    self.playlist.songs[idx].download(i);
                                 }
                                 else {
                                     self.audio_player.play(self.playlist.songs[idx].clone());
@@ -221,12 +227,12 @@ impl Application {
         let block: Block = Block::bordered().border_set(border::ROUNDED).title_top(Line::from(match self.state {
             ApplicationState::Search => "[ BROWSE SONGS ]",
             ApplicationState::Homepage => "[ HOMEPAGE ]",
-            ApplicationState::Playlist => "[ SONGS ]"
+            ApplicationState::Playlist => "[ SONGS ]",
         }).centered().light_blue()).title_bottom(Line::from(format!("[ {} ]", self.user_input.iter().collect::<String>())).centered().white());
 
         let lines: List = List::new(
             match self.state {
-                ApplicationState::Homepage => vec!["Browse Songs", "View Playlist"].into_iter().map(|x| Line::from(x)).collect::<Vec<Line>>(),
+                ApplicationState::Homepage => vec!["Browse Songs", "View Playlist", "Shuffle Play"].into_iter().map(|x| Line::from(x)).collect::<Vec<Line>>(),
                 ApplicationState::Search => self.search_results.iter().map(|song| {
                     let line = Line::from(song.name.clone());
                     match self.playlist.contains(song) {
@@ -271,5 +277,14 @@ impl Application {
         };
 
         if !self.playlist.contains(&self.search_results[idx]) { self.playlist.add_song(self.search_results[idx].clone()); }
+    }
+
+    fn shuffle(&mut self) {
+        let mut rng = rng();
+        let mut songs: Vec<Song> = self.playlist.songs.iter().filter(|x| x.file != None).map(|x| x.clone()).collect();
+        songs.shuffle(&mut rng);
+        for song in &songs {
+            self.audio_player.append(song.clone());
+        }
     }
 }
